@@ -31,6 +31,7 @@ func makeWorker(db *sql.DB, jobName string, job Job, opts JobOptions) *worker {
 	}
 }
 func (r *worker) isWorking() bool {
+
 	r.RLock()
 	working := r.working
 	r.RUnlock()
@@ -38,6 +39,9 @@ func (r *worker) isWorking() bool {
 }
 
 func (r *worker) start() {
+	if r.isWorking() {
+		return
+	}
 	r.Lock()
 	r.working = true
 	r.Unlock()
@@ -82,6 +86,7 @@ func (w *worker) work() error {
 		// ran out of work
 		// TODO: add logs
 		w.pause()
+		time.Sleep(time.Millisecond * 100)
 		return nil
 	} else if err != nil {
 		// some other error
@@ -114,9 +119,11 @@ func (w *worker) work() error {
 }
 
 func (w *worker) run() {
-	for !w.isStopping() {
-		err := w.work()
-		_ = err
+	for {
+		if !w.isStopping() {
+			err := w.work()
+			_ = err
+		}
 		// TODO: do something with err
 	}
 }

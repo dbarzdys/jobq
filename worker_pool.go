@@ -6,11 +6,12 @@ import (
 )
 
 type workerPool struct {
-	db      *sql.DB
-	jobName string
-	job     Job
-	opts    JobOptions
-	workers []*worker
+	db             *sql.DB
+	jobName        string
+	job            Job
+	opts           JobOptions
+	workers        []*worker
+	awaitingResume bool
 	sync.RWMutex
 }
 
@@ -26,14 +27,26 @@ func makeWorkerPool(db *sql.DB, jobName string, job Job, opts JobOptions) *worke
 
 func (wp *workerPool) resumeOne() {
 	wp.RLock()
-	for _, w := range wp.workers {
+	awaiting := wp.awaitingResume
+	workers := wp.workers
+	wp.RUnlock()
+	if awaiting {
+		return
+	}
+	for _, w := range workers {
 		if !w.isWorking() {
-			w.start()
-			wp.RUnlock()
+			wp.Lock()
+			wp.awaitingResume = true
+			wp.Unlock()
+			go func() {
+				w.start()
+				wp.Lock()
+				wp.awaitingResume = false
+				wp.Unlock()
+			}()
 			return
 		}
 	}
-	wp.RUnlock()
 }
 
 func (wp *workerPool) fill() {

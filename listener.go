@@ -42,7 +42,6 @@ func (l *listener) listen() error {
 			go l.dbListener.Ping()
 		}
 	}
-	return nil
 }
 
 func makeListener(conninfo string, opts listenerOpts) *listener {
@@ -56,10 +55,3 @@ func makeListener(conninfo string, opts listenerOpts) *listener {
 		),
 	}
 }
-
-// l := pq.NewListener(conninfo,
-// 	opts.minReconnectInterval,
-// 	opts.maxReconnectInterval,
-// 	opts.callback,
-// )
-// err := l.Listen("jobq_task_created")

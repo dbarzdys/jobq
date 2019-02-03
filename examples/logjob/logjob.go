@@ -23,6 +23,7 @@ func (*LogJob) HandleTask(ctx context.Context, tsk *jobq.Task) error {
 	if err != nil {
 		return err
 	}
+	time.Sleep(time.Millisecond * 5) // simulate some work delay
 	fmt.Printf("at: %v, taskID: %d, message: %s\n", time.Now(), tsk.ID(), body.Message)
 	return nil
 }

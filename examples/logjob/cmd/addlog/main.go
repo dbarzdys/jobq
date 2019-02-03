@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"text/tabwriter"
 
 	"github.com/dbarzdys/jobq"
@@ -43,25 +42,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	db.SetMaxOpenConns(10)
 	defer db.Close()
 
 	// add tasks
-	wg := sync.WaitGroup{}
-	wg.Add(int(*n))
 	for i := uint(0); i < *n; i++ {
-		go func(db *sql.DB) {
-			task := jobq.NewTask(logjob.Name, &logjob.TaskBody{
-				Message: strings.Join(fs.Args(), " "),
-			})
-			err = task.Queue(db)
-			if err != nil {
-				panic(err)
-			}
-			wg.Done()
-		}(db)
+		task := jobq.NewTask(logjob.Name, &logjob.TaskBody{
+			Message: strings.Join(fs.Args(), " "),
+		})
+		err = task.Queue(db)
+		if err != nil {
+			panic(err)
+		}
 	}
-	wg.Wait()
 	fmt.Printf("%d tasks queued\n", *n)
 }
 
