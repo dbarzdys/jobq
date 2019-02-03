@@ -9,17 +9,17 @@ type workerPool struct {
 	db      *sql.DB
 	jobName string
 	job     Job
-	maxSize int
+	opts    JobOptions
 	workers []*worker
 	sync.RWMutex
 }
 
-func makeWorkerPool(db *sql.DB, jobName string, job Job, max int) *workerPool {
+func makeWorkerPool(db *sql.DB, jobName string, job Job, opts JobOptions) *workerPool {
 	return &workerPool{
 		db:      db,
 		jobName: jobName,
 		job:     job,
-		maxSize: max,
+		opts:    opts,
 		workers: []*worker{},
 	}
 }
@@ -39,8 +39,9 @@ func (wp *workerPool) resumeOne() {
 func (wp *workerPool) fill() {
 	wp.RLock()
 	l := len(wp.workers)
+	size := int(wp.opts.workerPoolSize)
 	wp.RUnlock()
-	for i := l; i < wp.maxSize; i++ {
+	for i := l; i < size; i++ {
 		wp.add()
 	}
 }
@@ -64,7 +65,7 @@ func (wp *workerPool) stop() {
 
 func (wp *workerPool) add() {
 	wp.Lock()
-	w := makeWorker(wp.db, wp.jobName, wp.job)
+	w := makeWorker(wp.db, wp.jobName, wp.job, wp.opts)
 	go w.run()
 	wp.workers = append(wp.workers, w)
 	wp.Unlock()

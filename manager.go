@@ -7,18 +7,13 @@ import (
 	"github.com/lib/pq"
 )
 
-// type JobManager interface {
-// 	Start() error
-// 	Close() error
-// 	Register(name string, job Job) JobManager
-// }
-
 type Manager struct {
 	conninfo string
 	db       *sql.DB
 	listener *listener
 	pools    map[string]*workerPool
 	jobs     map[string]Job
+	opts     map[string]JobOptions
 	stopch   chan bool
 }
 
@@ -27,10 +22,16 @@ func NewManager(conninfo string) *Manager {
 		conninfo: conninfo,
 		jobs:     make(map[string]Job),
 		pools:    make(map[string]*workerPool),
+		opts:     make(map[string]JobOptions),
 	}
 }
 
-func (m *Manager) Register(name string, job Job) {
+func (m *Manager) Register(name string, job Job, opts ...JobOption) {
+	options := DefaultJobOptions
+	for _, o := range opts {
+		o(&options)
+	}
+	m.opts[name] = options
 	m.jobs[name] = job
 }
 
@@ -47,8 +48,8 @@ func (m *Manager) Run() (err error) {
 	if err = m.setupDB(); err != nil {
 		return err
 	}
+	m.setupWorkerPools()
 	m.setupListener()
-	m.setupPools()
 	// create stop channel
 	m.stopch = make(chan bool)
 	// create error channel
@@ -111,10 +112,9 @@ func (m *Manager) setupDB() error {
 	m.db = db
 	return nil
 }
-
-func (m *Manager) setupPools() {
+func (m *Manager) setupWorkerPools() {
 	for name, job := range m.jobs {
-		pool := makeWorkerPool(m.db, name, job, 5)
-		m.pools[name] = pool
+		opts := m.opts[name]
+		m.pools[name] = makeWorkerPool(m.db, name, job, opts)
 	}
 }

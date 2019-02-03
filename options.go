@@ -55,7 +55,7 @@ func WithJobWorkerPoolSize(size uint) JobOption {
 type TaskOptions struct {
 	startAt        time.Time
 	startAtEnabled bool
-	retries        int
+	retries        uint
 }
 
 var DefaultTaskOptions = TaskOptions{
@@ -76,7 +76,7 @@ func WithTaskStartTimeDisabled() TaskOption {
 		opts.startAtEnabled = false
 	}
 }
-func WithTaskRetries(retries int) TaskOption {
+func WithTaskRetries(retries uint) TaskOption {
 	return func(opts *TaskOptions) {
 		opts.retries = retries
 	}

@@ -16,15 +16,12 @@ type worker struct {
 	working bool
 	runch   chan bool
 	stopch  chan bool
+	opts    JobOptions
 	sync.RWMutex
 }
 
-var ID = 0
-
-func makeWorker(db *sql.DB, jobName string, job Job) *worker {
-	ID++
+func makeWorker(db *sql.DB, jobName string, job Job, opts JobOptions) *worker {
 	return &worker{
-		id:      ID,
 		db:      db,
 		jobName: jobName,
 		job:     job,
@@ -78,17 +75,16 @@ func (w *worker) work() error {
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	row := new(taskRow)
 	err = row.dequeue(w.jobName, tx)
 	if err == sql.ErrNoRows {
 		// ran out of work
 		// TODO: add logs
-		tx.Rollback()
 		w.pause()
 		return nil
 	} else if err != nil {
 		// some other error
-		tx.Rollback()
 		time.Sleep(time.Second)
 		return err
 	}
@@ -97,31 +93,21 @@ func (w *worker) work() error {
 	task := &Task{row, true}
 	err = w.job.HandleTask(ctx, task)
 	if ctx.Err() != nil {
-		tx.Rollback()
 		return errors.New("canceled") // TODO: define error for this
 	}
-	if !task.requeue {
-		return tx.Commit()
-	}
-	if err != nil {
+	if err != nil && w.opts.requeuing {
 		if task.row.retries > 0 {
 			task.row.retries--
-			err = task.row.requeue(tx)
-			if err != nil {
-				tx.Rollback()
-				return err
-			}
 		} else {
-			task.row.retries += 5
+			task.row.retries = w.opts.retries
 			task.row.timeout = NullTime{
-				Valid: true,
-				Time:  time.Now().Add(time.Second * 5).UTC(),
+				Valid: w.opts.timeoutEnabled,
+				Time:  time.Now().Add(w.opts.timeout).UTC(),
 			}
-			err = task.row.requeue(tx)
-			if err != nil {
-				tx.Rollback()
-				return err
-			}
+		}
+		err = task.row.requeue(tx)
+		if err != nil {
+			return err
 		}
 	}
 	return tx.Commit()
