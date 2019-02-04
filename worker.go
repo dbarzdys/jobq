@@ -30,28 +30,27 @@ func makeWorker(db *sql.DB, jobName string, job Job, opts JobOptions) *worker {
 		stopch:  make(chan bool),
 	}
 }
-func (r *worker) isWorking() bool {
-
-	r.RLock()
-	working := r.working
-	r.RUnlock()
+func (w *worker) isWorking() bool {
+	w.RLock()
+	working := w.working
+	w.RUnlock()
 	return working
 }
 
-func (r *worker) start() {
-	if r.isWorking() {
+func (w *worker) start() {
+	if w.isWorking() {
 		return
 	}
-	r.Lock()
-	r.working = true
-	r.Unlock()
-	r.runch <- true
+	w.Lock()
+	w.working = true
+	w.Unlock()
+	w.runch <- true
 }
 
-func (r *worker) stop() {
-	r.pause()
-	r.stopch <- true
-	<-r.stopch
+func (w *worker) stop() {
+	w.pause()
+	w.stopch <- true
+	<-w.stopch
 }
 
 func (w *worker) pause() {
@@ -105,7 +104,7 @@ func (w *worker) work() error {
 			task.row.retries--
 		} else {
 			task.row.retries = w.opts.retries
-			task.row.timeout = NullTime{
+			task.row.timeout = nullTime{
 				Valid: w.opts.timeoutEnabled,
 				Time:  time.Now().Add(w.opts.timeout).UTC(),
 			}

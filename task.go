@@ -2,74 +2,83 @@ package jobq
 
 import "errors"
 
-type UnqueuedTask struct {
+// PreparedTask contains details required for work
+// and is used for creating task using DBExecer
+type PreparedTask struct {
 	jobName string
 	body    TaskBody
 	opts    TaskOptions
 }
 
+// Task contains details required for work
+// and is used for for Job handle function
 type Task struct {
 	row     *taskRow
 	requeue bool
 }
 
+// ScanBody scans tasks row body with TaskBody implementation
 func (tsk *Task) ScanBody(body TaskBody) error {
 	return body.Scan(tsk.row.body)
 }
 
+// ID returns unique task identifier
 func (tsk *Task) ID() int64 {
 	return tsk.row.id
 }
 
+// TaskBody scans and returns value of a task body using []byte
 type TaskBody interface {
 	Value() ([]byte, error)
 	Scan(val []byte) error
 }
 
-func NewTask(jobName string, body TaskBody, options ...TaskOption) *UnqueuedTask {
-	o := DefaultTaskOptions
+// NewTask creates a new PreparedTask
+func NewTask(jobName string, body TaskBody, options ...TaskOption) *PreparedTask {
+	o := defaultTaskOptions
 	for _, opt := range options {
 		opt(&o)
 	}
-	return &UnqueuedTask{
+	return &PreparedTask{
 		jobName: jobName,
 		body:    body,
 		opts:    o,
 	}
 }
 
-func (js *UnqueuedTask) validate() error {
-	if js == nil {
+func (pt *PreparedTask) validate() error {
+	if pt == nil {
 		return errors.New("job not defined")
 	}
-	if js.body == nil {
+	if pt.body == nil {
 		return errors.New("queue not defined")
 	}
 	return nil
 }
 
-func (js *UnqueuedTask) row() (*taskRow, error) {
-	err := js.validate()
+func (pt *PreparedTask) row() (*taskRow, error) {
+	err := pt.validate()
 	if err != nil {
 		return nil, err
 	}
-	body, err := js.body.Value()
+	body, err := pt.body.Value()
 	if err != nil {
 		return nil, err
 	}
 	return &taskRow{
-		jobName: js.jobName,
+		jobName: pt.jobName,
 		body:    body,
-		retries: js.opts.retries,
-		startAt: NullTime{
-			Valid: js.opts.startAtEnabled,
-			Time:  js.opts.startAt.UTC(),
+		retries: pt.opts.retries,
+		startAt: nullTime{
+			Valid: pt.opts.startAtEnabled,
+			Time:  pt.opts.startAt.UTC(),
 		},
 	}, nil
 }
 
-func (js *UnqueuedTask) Queue(e DBExecer) error {
-	row, err := js.row()
+// Queue pushes PreparedTask to task queue
+func (pt *PreparedTask) Queue(e DBExecer) error {
+	row, err := pt.row()
 	if err != nil {
 		return err
 	}

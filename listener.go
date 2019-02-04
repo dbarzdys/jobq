@@ -9,8 +9,8 @@ import (
 
 type event struct {
 	JobName string   `json:"job_name"`
-	Timeout NullTime `json:"timeout"`
-	StartAt NullTime `json:"start_at"`
+	Timeout nullTime `json:"timeout"`
+	StartAt nullTime `json:"start_at"`
 }
 
 type listenerOpts struct {

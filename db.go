@@ -51,12 +51,12 @@ const dbSchema = `
 
 const nullTimeLayout = "2006-01-02T15:04:05.999999999"
 
-type NullTime struct {
+type nullTime struct {
 	Time  time.Time
 	Valid bool
 }
 
-func (nt *NullTime) UnmarshalJSON(b []byte) error {
+func (nt *nullTime) UnmarshalJSON(b []byte) error {
 	if string(b) == "null" {
 		nt.Valid = false
 		return nil
@@ -72,7 +72,7 @@ func (nt *NullTime) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (nt NullTime) MarshalJSON() ([]byte, error) {
+func (nt nullTime) MarshalJSON() ([]byte, error) {
 	if !nt.Valid {
 		return []byte("null"), nil
 	}
@@ -81,21 +81,24 @@ func (nt NullTime) MarshalJSON() ([]byte, error) {
 	return []byte(str), nil
 }
 
-func (nt *NullTime) Scan(value interface{}) error {
+func (nt *nullTime) Scan(value interface{}) error {
 	nt.Time, nt.Valid = value.(time.Time)
 	return nil
 }
 
-func (nt NullTime) Value() (driver.Value, error) {
+func (nt nullTime) Value() (driver.Value, error) {
 	if !nt.Valid {
 		return nil, nil
 	}
 	return nt.Time, nil
 }
 
+// DBExecer makes execs
 type DBExecer interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
+
+// DBQueryer makes queries
 type DBQueryer interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 }
@@ -105,8 +108,8 @@ type taskRow struct {
 	jobName string
 	body    []byte
 	retries uint
-	timeout NullTime
-	startAt NullTime
+	timeout nullTime
+	startAt nullTime
 }
 
 func (row *taskRow) queue(e DBExecer) error {

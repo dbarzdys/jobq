@@ -7,6 +7,7 @@ import (
 	"github.com/lib/pq"
 )
 
+// Manager manages jobs and workers
 type Manager struct {
 	conninfo string
 	db       *sql.DB
@@ -17,6 +18,7 @@ type Manager struct {
 	stopch   chan bool
 }
 
+// NewManager creates a new Manager using conninfo for database connection
 func NewManager(conninfo string) *Manager {
 	return &Manager{
 		conninfo: conninfo,
@@ -26,8 +28,9 @@ func NewManager(conninfo string) *Manager {
 	}
 }
 
+// Register adds a new job that will be handled by it's own workers
 func (m *Manager) Register(name string, job Job, opts ...JobOption) {
-	options := DefaultJobOptions
+	options := defaultJobOptions
 	for _, o := range opts {
 		o(&options)
 	}
@@ -35,6 +38,7 @@ func (m *Manager) Register(name string, job Job, opts ...JobOption) {
 	m.jobs[name] = job
 }
 
+// Close stops all workers and closes connection to database
 func (m *Manager) Close() (err error) {
 	if m.stopch == nil {
 		return
@@ -44,6 +48,7 @@ func (m *Manager) Close() (err error) {
 	return
 }
 
+// Run will connect to database and will start all workers
 func (m *Manager) Run() (err error) {
 	if err = m.setupDB(); err != nil {
 		return err
@@ -112,6 +117,7 @@ func (m *Manager) setupDB() error {
 	m.db = db
 	return nil
 }
+
 func (m *Manager) setupWorkerPools() {
 	for name, job := range m.jobs {
 		opts := m.opts[name]
