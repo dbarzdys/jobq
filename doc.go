@@ -4,8 +4,13 @@
 // Goals
 //
 // - Transactional job processing.
+//
 // - Concurrent processing.
+//
 // - Retries.
+//
 // - Scheduled jobs.
+//
 // - Multiple queues.
+//
 package jobq
