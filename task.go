@@ -6,7 +6,7 @@ import "errors"
 // and is used for creating task using DBExecer
 type PreparedTask struct {
 	jobName string
-	body    TaskBody
+	body    Valuer
 	opts    TaskOptions
 }
 
@@ -18,7 +18,7 @@ type Task struct {
 }
 
 // ScanBody scans tasks row body with TaskBody implementation
-func (tsk *Task) ScanBody(body TaskBody) error {
+func (tsk *Task) ScanBody(body Scanner) error {
 	return body.Scan(tsk.row.body)
 }
 
@@ -29,12 +29,22 @@ func (tsk *Task) ID() int64 {
 
 // TaskBody scans and returns value of a task body using []byte
 type TaskBody interface {
-	Value() ([]byte, error)
+	Scanner
+	Valuer
+}
+
+// Scanner scans value using []byte
+type Scanner interface {
 	Scan(val []byte) error
 }
 
+// Valuer returns value using []byte
+type Valuer interface {
+	Value() ([]byte, error)
+}
+
 // NewTask creates a new PreparedTask
-func NewTask(jobName string, body TaskBody, options ...TaskOption) *PreparedTask {
+func NewTask(jobName string, body Valuer, options ...TaskOption) *PreparedTask {
 	o := defaultTaskOptions
 	for _, opt := range options {
 		opt(&o)
