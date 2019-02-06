@@ -107,7 +107,7 @@ type taskRow struct {
 	id      int64
 	jobName string
 	body    []byte
-	retries uint
+	retries int
 	timeout nullTime
 	startAt nullTime
 }

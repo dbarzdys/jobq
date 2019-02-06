@@ -46,11 +46,13 @@ func main() {
 
 	// add tasks
 	for i := uint(0); i < *n; i++ {
-		task := jobq.NewTask(logjob.Name, &logjob.TaskBody{
+		task, err := jobq.NewTask(logjob.Name, &logjob.TaskBody{
 			Message: strings.Join(fs.Args(), " "),
 		})
-		err = task.Queue(db)
 		if err != nil {
+			panic(err)
+		}
+		if err = task.Queue(db); err != nil {
 			panic(err)
 		}
 	}
