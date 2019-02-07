@@ -235,7 +235,7 @@ func Test_taskRow_queue(t *testing.T) {
 		id      int64
 		jobName string
 		body    []byte
-		retries uint
+		retries int
 		timeout nullTime
 		startAt nullTime
 	}
@@ -273,7 +273,7 @@ func Test_taskRow_queue(t *testing.T) {
 				wantArgs: []interface{}{
 					"test-job-name",
 					[]byte{0, 1, 2, 3},
-					uint(5),
+					5,
 					nullTime{
 						Valid: true,
 						Time:  time.Unix(1000, 0),
@@ -312,7 +312,7 @@ func Test_taskRow_requeue(t *testing.T) {
 		id      int64
 		jobName string
 		body    []byte
-		retries uint
+		retries int
 		timeout nullTime
 		startAt nullTime
 	}
@@ -353,7 +353,7 @@ func Test_taskRow_requeue(t *testing.T) {
 					int64(100),
 					"test-job-name",
 					[]byte{0, 1, 2, 3},
-					uint(5),
+					5,
 					nullTime{
 						Valid: true,
 						Time:  time.Unix(1000, 0),
