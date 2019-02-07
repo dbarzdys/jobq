@@ -1,13 +1,11 @@
 package jobq
 
-import "errors"
-
 // PreparedTask contains details required for work
 // and is used for creating task using DBExecer
 type PreparedTask struct {
 	jobName string
 	body    Valuer
-	opts    TaskOptions
+	options TaskOptions
 }
 
 // Task contains details required for work
@@ -44,33 +42,26 @@ type Valuer interface {
 }
 
 // NewTask creates a new PreparedTask
-func NewTask(jobName string, body Valuer, options ...TaskOption) *PreparedTask {
-	o := defaultTaskOptions
-	for _, opt := range options {
-		opt(&o)
+func NewTask(jobName string, body Valuer, opts ...TaskOption) (*PreparedTask, error) {
+	if err := firstError(
+		validateJobName(jobName),
+		validateTaskBodyValuer(body),
+	); err != nil {
+		return nil, err
 	}
-	return &PreparedTask{
-		jobName: jobName,
-		body:    body,
-		opts:    o,
-	}
-}
-
-func (pt *PreparedTask) validate() error {
-	if pt == nil {
-		return errors.New("job not defined")
-	}
-	if pt.body == nil {
-		return errors.New("queue not defined")
-	}
-	return nil
-}
-
-func (pt *PreparedTask) row() (*taskRow, error) {
-	err := pt.validate()
+	options, err := defaultTaskOptions.with(opts...)
 	if err != nil {
 		return nil, err
 	}
+	task := PreparedTask{
+		jobName: jobName,
+		body:    body,
+		options: options,
+	}
+	return &task, nil
+}
+
+func (pt *PreparedTask) row() (*taskRow, error) {
 	body, err := pt.body.Value()
 	if err != nil {
 		return nil, err
@@ -78,10 +69,10 @@ func (pt *PreparedTask) row() (*taskRow, error) {
 	return &taskRow{
 		jobName: pt.jobName,
 		body:    body,
-		retries: pt.opts.retries,
+		retries: pt.options.retries,
 		startAt: nullTime{
-			Valid: pt.opts.startAtEnabled,
-			Time:  pt.opts.startAt.UTC(),
+			Valid: pt.options.startAtEnabled,
+			Time:  pt.options.startAt.UTC(),
 		},
 	}, nil
 }

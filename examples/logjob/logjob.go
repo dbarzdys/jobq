@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/dbarzdys/jobq"
 )
@@ -23,7 +22,6 @@ func (*LogJob) HandleTask(ctx context.Context, tsk *jobq.Task) error {
 	if err != nil {
 		return err
 	}
-	time.Sleep(time.Millisecond * 5) // simulate some work delay
 	fmt.Printf("taskID: %d, message: %s\n", tsk.ID(), body.Message)
 	return nil
 }

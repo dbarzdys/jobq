@@ -26,9 +26,14 @@ func main() {
 		*dbPassword,
 	)
 	manager := jobq.NewManager(conninfo)
-	manager.Register(logjob.Name, logjob.New())
-	err := manager.Run()
-	if err != nil {
+	if err := manager.Register(
+		logjob.Name,
+		logjob.New(),
+		jobq.WithJobWorkerPoolSize(5),
+	); err != nil {
+		panic(err)
+	}
+	if err := manager.Run(); err != nil {
 		panic(err)
 	}
 }

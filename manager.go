@@ -29,13 +29,20 @@ func NewManager(conninfo string) *Manager {
 }
 
 // Register adds a new job that will be handled by it's own workers
-func (m *Manager) Register(name string, job Job, opts ...JobOption) {
-	options := defaultJobOptions
-	for _, o := range opts {
-		o(&options)
+func (m *Manager) Register(name string, job Job, opts ...JobOption) error {
+	if err := firstError(
+		validateJobName(name),
+		validateIfJobUnregistered(name, m.jobs),
+	); err != nil {
+		return err
+	}
+	options, err := defaultJobOptions.with(opts...)
+	if err != nil {
+		return err
 	}
 	m.opts[name] = options
 	m.jobs[name] = job
+	return nil
 }
 
 // Close stops all workers and closes connection to database
@@ -87,7 +94,7 @@ func (m *Manager) Run() (err error) {
 			if ok {
 				pool.resumeOne()
 			}
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 5):
 			for _, p := range m.pools {
 				p.resumeOne()
 			}
