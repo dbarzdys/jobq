@@ -146,6 +146,7 @@ func (row *taskRow) requeue(e DBExecer) error {
 	`
 	_, err := e.Exec(
 		stmt,
+		row.id,
 		row.jobName,
 		row.body,
 		row.retries,
