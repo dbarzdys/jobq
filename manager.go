@@ -94,7 +94,7 @@ func (m *Manager) Run() (err error) {
 			if ok {
 				pool.resumeOne()
 			}
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 5):
 			for _, p := range m.pools {
 				p.resumeOne()
 			}
