@@ -10,9 +10,9 @@ import (
 // Manager manages jobs and workers
 type Manager struct {
 	conninfo string
-	db       *sql.DB
+	store    Store
 	listener *listener
-	pools    map[string]*workerPool
+	pools    map[string]WorkerPool
 	jobs     map[string]Job
 	opts     map[string]JobOptions
 	stopch   chan bool
@@ -23,7 +23,7 @@ func NewManager(conninfo string) *Manager {
 	return &Manager{
 		conninfo: conninfo,
 		jobs:     make(map[string]Job),
-		pools:    make(map[string]*workerPool),
+		pools:    make(map[string]WorkerPool),
 		opts:     make(map[string]JobOptions),
 	}
 }
@@ -68,7 +68,7 @@ func (m *Manager) Run() (err error) {
 	errch := make(chan error)
 	go func() {
 		for _, p := range m.pools {
-			p.start()
+			p.Start()
 		}
 	}()
 	go func(ch chan<- error) {
@@ -79,7 +79,7 @@ func (m *Manager) Run() (err error) {
 		// stop
 		case <-m.stopch:
 			for _, p := range m.pools {
-				p.stop()
+				p.Stop()
 			}
 			m.stopch <- true
 			m.stopch = nil
@@ -92,11 +92,11 @@ func (m *Manager) Run() (err error) {
 		case ev := <-m.listener.events:
 			pool, ok := m.pools[ev.JobName]
 			if ok {
-				pool.resumeOne()
+				pool.Resume(1)
 			}
 		case <-time.After(time.Second * 5):
 			for _, p := range m.pools {
-				p.resumeOne()
+				p.Resume(1)
 			}
 		}
 	}
@@ -121,13 +121,19 @@ func (m *Manager) setupDB() error {
 	if err != nil {
 		return err
 	}
-	m.db = db
+	m.store = &store{db}
 	return nil
 }
 
 func (m *Manager) setupWorkerPools() {
 	for name, job := range m.jobs {
 		opts := m.opts[name]
-		m.pools[name] = makeWorkerPool(m.db, name, job, opts)
+		factory := NewWorkerFactory().
+			WithStore(m.store).
+			WithJob(name, job).
+			WithOptions(opts)
+		pool := NewWorkerPool(factory)
+		pool.Scale(opts.workerPoolSize)
+		m.pools[name] = pool
 	}
 }

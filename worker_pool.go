@@ -1,85 +1,93 @@
 package jobq
 
 import (
-	"database/sql"
 	"sync"
 )
 
+type WorkerPool interface {
+	Resume(n int)
+	Scale(size int)
+	Start()
+	Stop()
+}
+
 type workerPool struct {
-	db             *sql.DB
-	jobName        string
-	job            Job
-	opts           JobOptions
-	workers        []*worker
-	awaitingResume bool
+	workers  []Worker
+	factory  WorkerFactory
+	resuming bool
 	sync.RWMutex
 }
 
-func makeWorkerPool(db *sql.DB, jobName string, job Job, opts JobOptions) *workerPool {
+func NewWorkerPool(factory WorkerFactory) WorkerPool {
 	return &workerPool{
-		db:      db,
-		jobName: jobName,
-		job:     job,
-		opts:    opts,
-		workers: []*worker{},
+		factory: factory,
+		workers: []Worker{},
 	}
 }
 
-func (wp *workerPool) resumeOne() {
-	wp.RLock()
-	awaiting := wp.awaitingResume
-	workers := wp.workers
-	wp.RUnlock()
-	if awaiting {
+func (wp *workerPool) Resume(n int) {
+	wp.Lock()
+	defer wp.Unlock()
+	if wp.resuming {
 		return
 	}
-	for _, w := range workers {
-		if !w.isWorking() {
-			wp.Lock()
-			wp.awaitingResume = true
-			wp.Unlock()
-			go func() {
-				w.start()
-				wp.Lock()
-				wp.awaitingResume = false
-				wp.Unlock()
-			}()
-			return
+	wp.resuming = true
+	for _, w := range wp.workers {
+		if n == 0 {
+			break
+		}
+		if !w.IsWorking() {
+			w.Resume()
+			n--
 		}
 	}
+	wp.resuming = false
 }
 
-func (wp *workerPool) fill() {
-	wp.RLock()
+func (wp *workerPool) Scale(size int) {
 	l := len(wp.workers)
-	size := int(wp.opts.workerPoolSize)
-	wp.RUnlock()
-	for i := l; i < size; i++ {
-		wp.add()
-	}
-}
-func (wp *workerPool) start() {
-	wp.fill()
-	wp.RLock()
-	for _, w := range wp.workers {
-		if !w.isWorking() {
-			w.start()
+	for l != size {
+		if l < size {
+			wp.increase()
+			l++
+		} else {
+			wp.decrease()
+			l--
 		}
 	}
-	wp.RUnlock()
-}
-func (wp *workerPool) stop() {
-	wp.RLock()
-	for _, w := range wp.workers {
-		w.stop()
-	}
-	wp.RUnlock()
 }
 
-func (wp *workerPool) add() {
-	wp.Lock()
-	w := makeWorker(wp.db, wp.jobName, wp.job, wp.opts)
-	go w.run()
+func (wp *workerPool) Start() {
+	wp.RLock()
+	workers := wp.workers
+	wp.RUnlock()
+	for _, w := range workers {
+		if !w.IsWorking() {
+			w.Resume()
+		}
+	}
+}
+
+func (wp *workerPool) Stop() {
+	wp.RLock()
+	defer wp.RUnlock()
+	for _, w := range wp.workers {
+		w.Stop()
+	}
+}
+
+func (wp *workerPool) increase() {
+	w := wp.factory.Make()
+	go w.Start()
 	wp.workers = append(wp.workers, w)
-	wp.Unlock()
+}
+
+func (wp *workerPool) decrease() {
+	l := len(wp.workers)
+	if l == 0 {
+		return
+	}
+	w := wp.workers[l-1]
+	w.Stop()
+	wp.workers = wp.workers[0 : l-1]
 }

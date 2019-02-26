@@ -10,6 +10,99 @@ import (
 	"time"
 )
 
+type mockDBExecer struct {
+	wantStmt string
+	wantArgs []interface{}
+	wantErr  bool
+	gotStmt  string
+	gotArgs  []interface{}
+	valid    bool
+}
+
+func (e *mockDBExecer) Exec(stmt string, args ...interface{}) (sql.Result, error) {
+	e.gotStmt = stmt
+	e.gotArgs = args
+	stmt = strings.Replace(stmt, "\n", "", -1)
+	stmt = strings.Replace(stmt, "\t", "", -1)
+	wantStmt := e.wantStmt
+	wantStmt = strings.Replace(wantStmt, "\n", "", -1)
+	wantStmt = strings.Replace(wantStmt, "\t", "", -1)
+	if stmt != wantStmt {
+		goto end
+	}
+	if len(args) != len(e.wantArgs) {
+		goto end
+	}
+	if !reflect.DeepEqual(args, e.wantArgs) {
+		goto end
+	}
+	e.valid = true
+end:
+	if e.wantErr {
+		return nil, errors.New("mock err")
+	}
+	return nil, nil
+}
+
+type mockDBQueryer struct {
+	wantStmt string
+	wantArgs []interface{}
+	wantErr  bool
+	gotStmt  string
+	gotArgs  []interface{}
+	valid    bool
+}
+
+func (e *mockDBQueryer) Query(stmt string, args ...interface{}) (*sql.Rows, error) {
+	e.gotStmt = stmt
+	e.gotArgs = args
+	stmt = strings.Replace(stmt, "\n", "", -1)
+	stmt = strings.Replace(stmt, "\t", "", -1)
+	wantStmt := e.wantStmt
+	wantStmt = strings.Replace(wantStmt, "\n", "", -1)
+	wantStmt = strings.Replace(wantStmt, "\t", "", -1)
+	if stmt != wantStmt {
+		goto end
+	}
+	if len(args) != len(e.wantArgs) {
+		goto end
+	}
+	if !reflect.DeepEqual(args, e.wantArgs) {
+		goto end
+	}
+	e.valid = true
+end:
+	if e.wantErr {
+		return nil, errors.New("mock err")
+	}
+	return nil, nil
+}
+
+type mockTx struct {
+	*mockDBExecer
+	*mockDBQueryer
+	onCommit   error
+	onRollback error
+}
+
+func (tx mockTx) Commit() error {
+	return tx.onCommit
+}
+
+func (tx mockTx) Rollback() error {
+	return tx.onRollback
+}
+
+type mockDB struct {
+	*mockDBExecer
+	*mockDBQueryer
+	onTx func() (*sql.Tx, error)
+}
+
+func (db mockDB) Begin() (*sql.Tx, error) {
+	return db.onTx()
+}
+
 func Test_nullTime_UnmarshalJSON(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -157,231 +250,6 @@ func Test_nullTime_Value(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("nullTime.Value() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-type mockDBExecer struct {
-	wantStmt string
-	wantArgs []interface{}
-	wantErr  bool
-	gotStmt  string
-	gotArgs  []interface{}
-	valid    bool
-}
-
-func (e *mockDBExecer) Exec(stmt string, args ...interface{}) (sql.Result, error) {
-	e.gotStmt = stmt
-	e.gotArgs = args
-	stmt = strings.Replace(stmt, "\n", "", -1)
-	stmt = strings.Replace(stmt, "\t", "", -1)
-	wantStmt := e.wantStmt
-	wantStmt = strings.Replace(wantStmt, "\n", "", -1)
-	wantStmt = strings.Replace(wantStmt, "\t", "", -1)
-	if stmt != wantStmt {
-		goto end
-	}
-	if len(args) != len(e.wantArgs) {
-		goto end
-	}
-	if !reflect.DeepEqual(args, e.wantArgs) {
-		goto end
-	}
-	e.valid = true
-end:
-	if e.wantErr {
-		return nil, errors.New("mock err")
-	}
-	return nil, nil
-}
-
-type mockDBQueryer struct {
-	wantStmt string
-	wantArgs []interface{}
-	wantErr  bool
-	gotStmt  string
-	gotArgs  []interface{}
-	valid    bool
-}
-
-func (e *mockDBQueryer) Query(stmt string, args ...interface{}) (*sql.Rows, error) {
-	e.gotStmt = stmt
-	e.gotArgs = args
-	stmt = strings.Replace(stmt, "\n", "", -1)
-	stmt = strings.Replace(stmt, "\t", "", -1)
-	wantStmt := e.wantStmt
-	wantStmt = strings.Replace(wantStmt, "\n", "", -1)
-	wantStmt = strings.Replace(wantStmt, "\t", "", -1)
-	if stmt != wantStmt {
-		goto end
-	}
-	if len(args) != len(e.wantArgs) {
-		goto end
-	}
-	if !reflect.DeepEqual(args, e.wantArgs) {
-		goto end
-	}
-	e.valid = true
-end:
-	if e.wantErr {
-		return nil, errors.New("mock err")
-	}
-	return nil, nil
-}
-
-func Test_taskRow_queue(t *testing.T) {
-	type fields struct {
-		id      int64
-		jobName string
-		body    []byte
-		retries int
-		timeout nullTime
-		startAt nullTime
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		execer  *mockDBExecer
-		wantErr bool
-	}{
-		{
-			name: "success",
-			fields: fields{
-				jobName: "test-job-name",
-				body:    []byte{0, 1, 2, 3},
-				retries: 5,
-				timeout: nullTime{
-					Valid: true,
-					Time:  time.Unix(1000, 0),
-				},
-				startAt: nullTime{
-					Valid: true,
-					Time:  time.Unix(2000, 0),
-				},
-			},
-			execer: &mockDBExecer{
-				wantStmt: `
-					INSERT INTO jobq_tasks (
-						job_name,
-						body,
-						retries,
-						timeout,
-						start_at
-					) VALUES ($1, $2, $3, $4, $5);
-				`,
-				wantArgs: []interface{}{
-					"test-job-name",
-					[]byte{0, 1, 2, 3},
-					5,
-					nullTime{
-						Valid: true,
-						Time:  time.Unix(1000, 0),
-					},
-					nullTime{
-						Valid: true,
-						Time:  time.Unix(2000, 0),
-					},
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			row := &taskRow{
-				id:      tt.fields.id,
-				jobName: tt.fields.jobName,
-				body:    tt.fields.body,
-				retries: tt.fields.retries,
-				timeout: tt.fields.timeout,
-				startAt: tt.fields.startAt,
-			}
-			if err := row.queue(tt.execer); (err != nil) != tt.wantErr {
-				t.Errorf("taskRow.queue() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.execer.valid {
-				t.Errorf("taskRow.queue() gotStmt = %s, wantStmt = %s", tt.execer.gotStmt, tt.execer.wantStmt)
-				t.Errorf("taskRow.queue() gotArgs = %v, wantArgs = %v", tt.execer.gotArgs, tt.execer.wantArgs)
-			}
-		})
-	}
-}
-
-func Test_taskRow_requeue(t *testing.T) {
-	type fields struct {
-		id      int64
-		jobName string
-		body    []byte
-		retries int
-		timeout nullTime
-		startAt nullTime
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		execer  *mockDBExecer
-		wantErr bool
-	}{
-		{
-			name: "success",
-			fields: fields{
-				id:      100,
-				jobName: "test-job-name",
-				body:    []byte{0, 1, 2, 3},
-				retries: 5,
-				timeout: nullTime{
-					Valid: true,
-					Time:  time.Unix(1000, 0),
-				},
-				startAt: nullTime{
-					Valid: true,
-					Time:  time.Unix(2000, 0),
-				},
-			},
-			execer: &mockDBExecer{
-				wantStmt: `
-					INSERT INTO jobq_tasks (
-						id,
-						job_name,
-						body,
-						retries,
-						timeout,
-						start_at
-					) VALUES ($1, $2, $3, $4, $5, $6);
-				`,
-				wantArgs: []interface{}{
-					int64(100),
-					"test-job-name",
-					[]byte{0, 1, 2, 3},
-					5,
-					nullTime{
-						Valid: true,
-						Time:  time.Unix(1000, 0),
-					},
-					nullTime{
-						Valid: true,
-						Time:  time.Unix(2000, 0),
-					},
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			row := &taskRow{
-				id:      tt.fields.id,
-				jobName: tt.fields.jobName,
-				body:    tt.fields.body,
-				retries: tt.fields.retries,
-				timeout: tt.fields.timeout,
-				startAt: tt.fields.startAt,
-			}
-			if err := row.requeue(tt.execer); (err != nil) != tt.wantErr {
-				t.Errorf("taskRow.requeue() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.execer.valid {
-				t.Errorf("taskRow.queue() gotStmt = %s, wantStmt = %s", tt.execer.gotStmt, tt.execer.wantStmt)
-				t.Errorf("taskRow.queue() gotArgs = %v, wantArgs = %v", tt.execer.gotArgs, tt.execer.wantArgs)
 			}
 		})
 	}

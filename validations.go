@@ -6,20 +6,22 @@ import (
 	"time"
 )
 
+// Validation errors
 var (
+	ErrJobMapUndefined        = errors.New("job map not defined")
 	ErrAlreadyRegistered      = errors.New("job already registered")
 	ErrInvalidRetries         = errors.New("retries should be >= 0")
 	ErrInvalidPoolSize        = errors.New("pool size should be > 0")
 	ErrInvalidTimeout         = errors.New("timeout should be higher than 0")
-	ErrInvalidStartTime       = errors.New("start at time should be in future")
-	ErrInvalidTaskBodyScanner = errors.New("task body scanner Invalid not to be nil")
-	ErrInvalidTaskBodyValuer  = errors.New("task body valuer Invalid not to be nil")
-	ErrInvalidJob             = errors.New("job Invalid not to be nil")
-	ErrInvalidJobName         = errors.New("invalid job name. Invalid [a-z0-9_]{3,100} characters")
+	ErrInvalidStartTime       = errors.New("start_at time should be future time")
+	ErrInvalidTaskBodyScanner = errors.New("task body scanner should not be nil")
+	ErrInvalidTaskBodyValuer  = errors.New("task body valuer should not be nil")
+	ErrInvalidJob             = errors.New("job should not be nil")
+	ErrInvalidJobName         = errors.New("invalid job name. should be snake_case")
 )
 
 const (
-	jobNameRegex = "^[a-z]{3,100}$"
+	jobNameRegex = "^[a-z0-9][a-z0-9_]{1,48}[a-z0-9]$"
 )
 
 func validateJobName(name string) error {
@@ -31,6 +33,9 @@ func validateJobName(name string) error {
 }
 
 func validateIfJobUnregistered(jobName string, jobs map[string]Job) error {
+	if jobs == nil {
+		return ErrJobMapUndefined
+	}
 	if _, ok := jobs[jobName]; ok {
 		return ErrAlreadyRegistered
 	}

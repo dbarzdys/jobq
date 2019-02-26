@@ -11,8 +11,9 @@ type PreparedTask struct {
 // Task contains details required for work
 // and is used for for Job handle function
 type Task struct {
-	row     *taskRow
-	requeue bool
+	row      *TaskRow
+	requeue  bool
+	workerID int
 }
 
 // ScanBody scans tasks row body with TaskBody implementation
@@ -23,6 +24,11 @@ func (tsk *Task) ScanBody(body Scanner) error {
 // ID returns unique task identifier
 func (tsk *Task) ID() int64 {
 	return tsk.row.id
+}
+
+// WorkerID returns worker identifier
+func (tsk *Task) WorkerID() int {
+	return tsk.workerID
 }
 
 // TaskBody scans and returns value of a task body using []byte
@@ -61,12 +67,12 @@ func NewTask(jobName string, body Valuer, opts ...TaskOption) (*PreparedTask, er
 	return &task, nil
 }
 
-func (pt *PreparedTask) row() (*taskRow, error) {
+func (pt *PreparedTask) row() (*TaskRow, error) {
 	body, err := pt.body.Value()
 	if err != nil {
 		return nil, err
 	}
-	return &taskRow{
+	return &TaskRow{
 		jobName: pt.jobName,
 		body:    body,
 		retries: pt.options.retries,
@@ -83,5 +89,5 @@ func (pt *PreparedTask) Queue(e DBExecer) error {
 	if err != nil {
 		return err
 	}
-	return row.queue(e)
+	return queueTask(e, row)
 }

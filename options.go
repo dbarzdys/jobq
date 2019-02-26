@@ -11,6 +11,7 @@ type JobOptions struct {
 	retries        int
 	requeuing      bool
 	workerPoolSize int
+	ttl            time.Duration
 }
 
 func (opts JobOptions) with(args ...JobOption) (JobOptions, error) {
@@ -28,6 +29,7 @@ var defaultJobOptions = JobOptions{
 	retries:        5,
 	requeuing:      true,
 	workerPoolSize: 1,
+	ttl:            time.Second * 20,
 }
 
 // JobOption configures job

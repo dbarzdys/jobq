@@ -2,67 +2,149 @@ package jobq
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
 
+var (
+	ErrWorkCanceled = errors.New("work has been canceled")
+)
+
+type Worker interface {
+	ID() int
+	IsWorking() bool
+	Start()
+	Stop()
+	Resume()
+	Pause()
+}
+
 type worker struct {
-	id      int
-	db      *sql.DB
-	jobName string
-	job     Job
-	working bool
-	runch   chan bool
-	stopch  chan bool
-	opts    JobOptions
+	id       int
+	store    Store
+	jobName  string
+	job      Job
+	working  bool
+	awaiting bool
+	runch    chan bool
+	okch     chan bool
+	stopch   chan bool
+	opts     JobOptions
 	sync.RWMutex
 }
 
-func makeWorker(db *sql.DB, jobName string, job Job, opts JobOptions) *worker {
+type WorkerFactory interface {
+	WithJob(name string, job Job) WorkerFactory
+	WithStore(store Store) WorkerFactory
+	WithOptions(opts JobOptions) WorkerFactory
+	Make() Worker
+}
+
+type workerFactory struct {
+	n       int
+	jobName string
+	job     Job
+	store   Store
+	opts    JobOptions
+}
+
+func (f *workerFactory) WithJob(name string, job Job) WorkerFactory {
+	f.jobName = name
+	f.job = job
+	return f
+}
+
+func (f *workerFactory) WithStore(store Store) WorkerFactory {
+	f.store = store
+	return f
+}
+
+func (f *workerFactory) WithOptions(opts JobOptions) WorkerFactory {
+	f.opts = opts
+	return f
+}
+
+func NewWorkerFactory() WorkerFactory {
+	return &workerFactory{}
+}
+
+func (f *workerFactory) Make() Worker {
+	f.n++
 	return &worker{
-		db:      db,
-		jobName: jobName,
-		job:     job,
+		id:      f.n,
+		jobName: f.jobName,
+		job:     f.job,
+		store:   f.store,
+		opts:    f.opts,
 		working: false,
 		runch:   make(chan bool),
+		okch:    make(chan bool),
 		stopch:  make(chan bool),
 	}
 }
-func (w *worker) isWorking() bool {
-	w.RLock()
-	working := w.working
-	w.RUnlock()
-	return working
+
+func (w *worker) ID() int {
+	return w.id
 }
 
-func (w *worker) start() {
-	if w.isWorking() {
+func (w *worker) IsWorking() bool {
+	w.RLock()
+	defer w.RUnlock()
+	return w.working
+}
+
+func (w *worker) Start() {
+	for !w.isStopping() {
+		err := w.work()
+		w.handleWorkErr(err)
+	}
+}
+
+func (w *worker) handleWorkErr(err error) {
+	switch err {
+	case nil:
+		return
+	case ErrEmptyQueue:
+		w.Pause()
+		time.Sleep(time.Millisecond * 100)
+		return
+	case ErrWorkCanceled:
+		time.Sleep(time.Second)
+		return
+	default:
+		fmt.Printf("unhandled err: %v\n", err)
+		time.Sleep(time.Second)
 		return
 	}
-	w.Lock()
-	w.working = true
-	w.Unlock()
-	w.runch <- true
 }
 
-func (w *worker) stop() {
-	w.pause()
+func (w *worker) Stop() {
+	w.Pause()
 	w.stopch <- true
 	<-w.stopch
 }
 
-func (w *worker) pause() {
+func (w *worker) Resume() {
+	w.runch <- true
+	<-w.okch
 	w.Lock()
-	w.working = false
+	w.working = true
 	w.Unlock()
 }
 
+func (w *worker) Pause() {
+	w.Lock()
+	defer w.Unlock()
+	w.working = false
+}
+
 func (w *worker) isStopping() bool {
-	for !w.isWorking() {
+	for !w.IsWorking() {
 		select {
 		case <-w.runch:
+			w.okch <- true
 			return false
 		case <-w.stopch:
 			w.stopch <- true
@@ -74,55 +156,38 @@ func (w *worker) isStopping() bool {
 }
 
 func (w *worker) work() error {
-	tx, err := w.db.Begin()
+	act, err := w.store.Dequeue(w.jobName)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	row := new(taskRow)
-	err = row.dequeue(w.jobName, tx)
-	if err == sql.ErrNoRows {
-		// ran out of work
-		// TODO: add logs
-		w.pause()
-		time.Sleep(time.Millisecond * 100)
-		return nil
-	} else if err != nil {
-		// some other error
-		time.Sleep(time.Second)
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*20)
+	defer act.Rollback()
+	row := act.Row()
+	ctx, cancel := context.WithTimeout(context.Background(), w.opts.ttl)
 	defer cancel()
-	task := &Task{row, true}
+	task := &Task{row, true, w.id}
 	err = w.job.HandleTask(ctx, task)
-	if ctx.Err() != nil {
-		return errors.New("canceled") // TODO: define error for this
-	}
 	if err != nil && w.opts.requeuing {
-		if task.row.retries > 0 {
-			task.row.retries--
-		} else {
-			task.row.retries = w.opts.retries
-			task.row.timeout = nullTime{
-				Valid: w.opts.timeoutEnabled,
-				Time:  time.Now().Add(w.opts.timeout).UTC(),
-			}
-		}
-		err = task.row.requeue(tx)
+		prepareTaskForRequeue(task, w.opts)
+		err = act.Requeue(row)
 		if err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err = ctx.Err(); err != nil {
+		return ErrWorkCanceled
+	}
+
+	return act.Commit()
 }
 
-func (w *worker) run() {
-	for {
-		if !w.isStopping() {
-			err := w.work()
-			_ = err
+func prepareTaskForRequeue(task *Task, opts JobOptions) {
+	if task.row.retries > 0 {
+		task.row.retries--
+	} else {
+		task.row.retries = opts.retries
+		task.row.timeout = nullTime{
+			Valid: opts.timeoutEnabled,
+			Time:  time.Now().Add(opts.timeout).UTC(),
 		}
-		// TODO: do something with err
 	}
 }

@@ -103,16 +103,20 @@ type DBQueryer interface {
 	Query(query string, args ...interface{}) (*sql.Rows, error)
 }
 
-type taskRow struct {
-	id      int64
-	jobName string
-	body    []byte
-	retries int
-	timeout nullTime
-	startAt nullTime
+type DB interface {
+	DBExecer
+	DBQueryer
+	Begin() (*sql.Tx, error)
 }
 
-func (row *taskRow) queue(e DBExecer) error {
+type Tx interface {
+	DBExecer
+	DBQueryer
+	Commit() error
+	Rollback() error
+}
+
+func queueTask(e DBExecer, row *TaskRow) error {
 	stmt := `
 		INSERT INTO jobq_tasks (
 			job_name,
@@ -133,7 +137,7 @@ func (row *taskRow) queue(e DBExecer) error {
 	return err
 }
 
-func (row *taskRow) requeue(e DBExecer) error {
+func requeueTask(e DBExecer, row *TaskRow) error {
 	stmt := `
 		INSERT INTO jobq_tasks (
 			id,
@@ -156,7 +160,8 @@ func (row *taskRow) requeue(e DBExecer) error {
 	return err
 }
 
-func (row *taskRow) dequeue(jobName string, q DBQueryer) error {
+func dequeueTask(e DBQueryer, name string) (*TaskRow, error) {
+	row := new(TaskRow)
 	stmt := `
 		DELETE FROM jobq_tasks WHERE id = (
 			SELECT id FROM jobq_tasks
@@ -168,12 +173,12 @@ func (row *taskRow) dequeue(jobName string, q DBQueryer) error {
 			LIMIT 1
 		) RETURNING id, body, retries, timeout, start_at;
 	`
-	rows, err := q.Query(stmt, jobName)
+	rows, err := e.Query(stmt, name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !rows.Next() {
-		return sql.ErrNoRows
+		return nil, sql.ErrNoRows
 	}
 	defer rows.Close()
 	err = rows.Scan(
@@ -184,8 +189,8 @@ func (row *taskRow) dequeue(jobName string, q DBQueryer) error {
 		&row.startAt,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	row.jobName = jobName
-	return nil
+	row.jobName = name
+	return row, nil
 }
