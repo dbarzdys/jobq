@@ -8,6 +8,12 @@ import (
 )
 
 const dbSchema = `
+	CREATE TABLE IF NOT EXISTS jobq_version (
+		id SERIAL,
+		version int NOT NULL UNIQUE,
+		applied boolean NOT NULL,
+		PRIMARY KEY(id)
+	);
 	CREATE TABLE IF NOT EXISTS jobq_tasks (
 		id BIGSERIAL,
 		job_name varchar(100) NOT NULL,
@@ -48,6 +54,10 @@ const dbSchema = `
 		END;
 	$$
 	`
+
+type MigrateDB interface {
+	Add(version int, upStmt, downStmt string)
+}
 
 const nullTimeLayout = "2006-01-02T15:04:05.999999999"
 
