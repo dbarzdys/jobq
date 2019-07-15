@@ -29,7 +29,7 @@ func main() {
 	if err := manager.Register(
 		logjob.Name,
 		logjob.New(),
-		jobq.WithJobWorkerPoolSize(9),
+		jobq.WithJobWorkerPoolSize(50),
 	); err != nil {
 		panic(err)
 	}

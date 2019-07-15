@@ -26,7 +26,7 @@ func (*LogJob) HandleTask(ctx context.Context, tsk *jobq.Task) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("workerID: %d, taskID: %d, message: %s\n", tsk.WorkerID(), tsk.ID(), body.Message)
+	fmt.Printf("workerID: %02d, taskUID: %s, taskID: %d, message: %s\n", tsk.WorkerID(), tsk.UID(), tsk.ID(), body.Message)
 	return nil
 }
 

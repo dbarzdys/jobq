@@ -3,6 +3,7 @@ package jobq
 // PreparedTask contains details required for work
 // and is used for creating task using DBExecer
 type PreparedTask struct {
+	uid     string
 	jobName string
 	body    Valuer
 	options TaskOptions
@@ -24,6 +25,10 @@ func (tsk *Task) ScanBody(body Scanner) error {
 // ID returns unique task identifier
 func (tsk *Task) ID() int64 {
 	return tsk.row.id
+}
+
+func (tsk *Task) UID() string {
+	return tsk.row.uid
 }
 
 // WorkerID returns worker identifier
@@ -60,6 +65,7 @@ func NewTask(jobName string, body Valuer, opts ...TaskOption) (*PreparedTask, er
 		return nil, err
 	}
 	task := PreparedTask{
+		uid:     uuid(),
 		jobName: jobName,
 		body:    body,
 		options: options,
@@ -75,6 +81,7 @@ func (pt *PreparedTask) row() (*TaskRow, error) {
 	return &TaskRow{
 		jobName: pt.jobName,
 		body:    body,
+		uid:     pt.uid,
 		retries: pt.options.retries,
 		startAt: nullTime{
 			Valid: pt.options.startAtEnabled,
@@ -90,4 +97,8 @@ func (pt *PreparedTask) Queue(e DBExecer) error {
 		return err
 	}
 	return queueTask(e, row)
+}
+
+func (pt *PreparedTask) UID() string {
+	return pt.uid
 }

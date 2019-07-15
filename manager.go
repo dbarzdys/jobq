@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/dbarzdys/jobq/migrate"
+
 	"github.com/lib/pq"
 )
 
@@ -117,7 +119,7 @@ func (m *Manager) setupDB() error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(dbSchema)
+	err = migrate.Migrate(db)
 	if err != nil {
 		return err
 	}

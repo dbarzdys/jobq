@@ -4,50 +4,11 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+
 	"time"
+
+	_ "github.com/dbarzdys/jobq/migrate/migrations"
 )
-
-const dbSchema = `
-	CREATE TABLE IF NOT EXISTS jobq_tasks (
-		id BIGSERIAL,
-		job_name varchar(100) NOT NULL,
-		body jsonb NOT NULL,
-		retries int NOT NULL,
-		timeout timestamp,
-		start_at timestamp,
-		PRIMARY KEY(id)
-	);
-
-	CREATE OR REPLACE FUNCTION jobq_notify_task_created() RETURNS TRIGGER AS $$
-    DECLARE 
-        notification jsonb;
-    BEGIN
-        notification = json_build_object(
-			'job_name', NEW.job_name,
-			'timeout', NEW.timeout,
-			'start_at', NEW.start_at
-		);
-        PERFORM pg_notify('jobq_task_created', notification::text);
-        RETURN NULL; 
-    END;
-	$$ LANGUAGE plpgsql;
-
-	
-	DO $$ BEGIN
-		IF NOT EXISTS(SELECT *
-			FROM information_schema.triggers
-			WHERE event_object_table = 'jobq_tasks'
-			AND trigger_name = 'jobq_task_trigger'
-			)
-			THEN
-				CREATE TRIGGER jobq_task_trigger
-					AFTER INSERT ON jobq_tasks
-					FOR EACH ROW EXECUTE PROCEDURE jobq_notify_task_created();
-			
-			END IF ;
-		END;
-	$$
-	`
 
 const nullTimeLayout = "2006-01-02T15:04:05.999999999"
 
@@ -119,15 +80,17 @@ type Tx interface {
 func queueTask(e DBExecer, row *TaskRow) error {
 	stmt := `
 		INSERT INTO jobq_tasks (
+			uid,
 			job_name,
 			body,
 			retries,
 			timeout,
 			start_at
-		) VALUES ($1, $2, $3, $4, $5);
+		) VALUES ($1, $2, $3, $4, $5, $6);
 	`
 	_, err := e.Exec(
 		stmt,
+		row.uid,
 		row.jobName,
 		row.body,
 		row.retries,
@@ -141,16 +104,18 @@ func requeueTask(e DBExecer, row *TaskRow) error {
 	stmt := `
 		INSERT INTO jobq_tasks (
 			id,
+			uid,
 			job_name,
 			body,
 			retries,
 			timeout,
 			start_at
-		) VALUES ($1, $2, $3, $4, $5, $6);
+		) VALUES ($1, $2, $3, $4, $5, $6, $7);
 	`
 	_, err := e.Exec(
 		stmt,
 		row.id,
+		row.uid,
 		row.jobName,
 		row.body,
 		row.retries,
@@ -171,7 +136,7 @@ func dequeueTask(e DBQueryer, name string) (*TaskRow, error) {
 			ORDER BY id ASC
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
-		) RETURNING id, body, retries, timeout, start_at;
+		) RETURNING id, uid, body, retries, timeout, start_at;
 	`
 	rows, err := e.Query(stmt, name)
 	if err != nil {
@@ -183,6 +148,7 @@ func dequeueTask(e DBQueryer, name string) (*TaskRow, error) {
 	defer rows.Close()
 	err = rows.Scan(
 		&row.id,
+		&row.uid,
 		&row.body,
 		&row.retries,
 		&row.timeout,

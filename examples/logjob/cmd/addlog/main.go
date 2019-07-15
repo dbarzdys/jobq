@@ -43,7 +43,11 @@ func main() {
 		panic(err)
 	}
 	defer db.Close()
-
+	tx, err := db.Begin()
+	if err != nil {
+		panic(err)
+	}
+	defer tx.Rollback()
 	// add tasks
 	for i := uint(0); i < *n; i++ {
 		task, err := jobq.NewTask(logjob.Name, &logjob.TaskBody{
@@ -52,9 +56,13 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		if err = task.Queue(db); err != nil {
+		if err = task.Queue(tx); err != nil {
 			panic(err)
 		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		panic(err)
 	}
 	fmt.Printf("%d tasks queued\n", *n)
 }

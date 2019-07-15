@@ -1,16 +1,29 @@
 package jobq
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"errors"
+	"fmt"
 )
 
 var (
 	ErrEmptyQueue = errors.New("queue is empty")
 )
 
+func uuid() string {
+	buf := make([]byte, 16)
+	rand.Read(buf)
+	buf[6] = (buf[6] & 0x0f) | 0x40
+	var u [16]byte
+	copy(u[:], buf[:])
+	u[8] = (u[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:])
+}
+
 type TaskRow struct {
 	id      int64
+	uid     string
 	jobName string
 	body    []byte
 	retries int

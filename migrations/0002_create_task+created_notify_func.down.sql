@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS jobq_notify_task_created()  ;
